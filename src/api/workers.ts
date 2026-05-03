@@ -4,8 +4,10 @@ import {
   WorkerProfile,
   CreateWorkerAccount,
   UpdateWorkerProfile,
+  UpdateAvailability,
   WorkerTypeInfo,
   ResponseMessage,
+  NearbyWorkerListItem,
 } from '../types';
 
 export const workersApi = {
@@ -15,6 +17,9 @@ export const workersApi = {
   getWorkerById: (workerId: string) =>
     apiClient.get<WorkerProfile>(`/api/v1/workers/${workerId}`),
 
+  getWorkerByUserId: (userId: string) =>
+    apiClient.get<WorkerProfile>(`/api/v1/workers/by-user/${userId}`),
+
   getMyWorkerProfile: () =>
     apiClient.get<WorkerProfile>('/api/v1/workers/me'),
 
@@ -23,6 +28,9 @@ export const workersApi = {
 
   updateMyWorkerProfile: (data: UpdateWorkerProfile) =>
     apiClient.put<ResponseMessage>('/api/v1/workers/me', data),
+
+  updateAvailability: (data: UpdateAvailability) =>
+    apiClient.put<WorkerProfile>('/api/v1/workers/me/availability', data),
 
   submitCnicVerification: (formData: FormData) =>
     apiClient.post<ResponseMessage>('/api/v1/workers/verify/cnic', formData, {
@@ -42,4 +50,19 @@ export const workersApi = {
   // Public endpoint — no auth needed
   getAllWorkerTypes: () =>
     apiClient.get<WorkerTypeInfo[]>('/public/api/v1/workers/types/all'),
+
+  getNearbyWorkers: (
+    lat: number,
+    lng: number,
+    radiusKm: number,
+    workerType?: string
+  ): Promise<NearbyWorkerListItem[]> => {
+    const params = new URLSearchParams({
+      lat: lat.toString(),
+      lng: lng.toString(),
+      radiusKm: radiusKm.toString(),
+    });
+    if (workerType) params.append('workerType', workerType);
+    return apiClient.get(`/api/v1/workers/nearby?${params}`).then(r => r.data);
+  },
 };

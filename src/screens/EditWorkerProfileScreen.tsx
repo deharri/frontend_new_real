@@ -10,7 +10,9 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Modal,
 } from 'react-native';
+import MapView, { Marker, MapPressEvent, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,6 +60,9 @@ export function EditWorkerProfileScreen({ navigation }: Props) {
     workerProfile?.languages || []
   );
   const [loading, setLoading] = useState(false);
+  const [shopLatitude, setShopLatitude] = useState<number | null>(workerProfile?.shopLatitude ?? null);
+  const [shopLongitude, setShopLongitude] = useState<number | null>(workerProfile?.shopLongitude ?? null);
+  const [showMapPicker, setShowMapPicker] = useState(false);
 
   const addSkill = () => {
     const trimmed = skillInput.trim();
@@ -106,6 +111,8 @@ export function EditWorkerProfileScreen({ navigation }: Props) {
         area: area.trim() || undefined,
         serviceCities: selectedServiceCities.length > 0 ? selectedServiceCities : undefined,
         languages: selectedLanguages.length > 0 ? selectedLanguages : undefined,
+        shopLatitude: shopLatitude ?? undefined,
+        shopLongitude: shopLongitude ?? undefined,
       });
       logger.info(TAG, 'Worker profile updated');
       await fetchWorkerProfile();
@@ -125,7 +132,7 @@ export function EditWorkerProfileScreen({ navigation }: Props) {
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
         style={{ paddingTop: insets.top }}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -318,6 +325,67 @@ export function EditWorkerProfileScreen({ navigation }: Props) {
           </View>
         </View>
 
+        {/* Shop Location */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIcon, { backgroundColor: colors.blue50 }]}>
+              <Ionicons name="storefront" size={18} color={colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Shop Location</Text>
+          </View>
+          <Text style={styles.sectionLabel}>Clients will see your shop on the map</Text>
+
+          {/* Step 1: Open map and pin location */}
+          <TouchableOpacity style={styles.locationPickerBtn} onPress={() => setShowMapPicker(true)}>
+            <Ionicons name="map" size={18} color={shopLatitude ? colors.primary : colors.slate400} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locationPickerLabel}>Pin on Map</Text>
+              <Text style={[styles.locationPickerText, shopLatitude ? styles.locationPickerTextSet : undefined]}>
+                {shopLatitude
+                  ? `📍 ${shopLatitude.toFixed(5)}, ${shopLongitude?.toFixed(5)}`
+                  : 'Tap to open map and drop a pin'}
+              </Text>
+            </View>
+            <Ionicons name={shopLatitude ? 'checkmark-circle' : 'chevron-forward'} size={18} color={shopLatitude ? colors.green600 : colors.slate400} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Map Picker Modal */}
+        <Modal visible={showMapPicker} animationType="slide" statusBarTranslucent>
+          <View style={{ flex: 1 }}>
+            <View style={styles.mapModalHeader}>
+              <TouchableOpacity onPress={() => setShowMapPicker(false)}>
+                <Ionicons name="arrow-back" size={22} color={colors.slate700} />
+              </TouchableOpacity>
+              <Text style={styles.mapModalTitle}>Tap to set your shop location</Text>
+              <TouchableOpacity onPress={() => setShowMapPicker(false)}>
+                <Text style={styles.mapModalDone}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <MapView
+              provider={PROVIDER_GOOGLE}
+              style={{ flex: 1 }}
+              initialRegion={{
+                latitude: shopLatitude ?? 33.6844,
+                longitude: shopLongitude ?? 73.0479,
+                latitudeDelta: 0.05,
+                longitudeDelta: 0.05,
+              }}
+              onPress={(e: MapPressEvent) => {
+                setShopLatitude(e.nativeEvent.coordinate.latitude);
+                setShopLongitude(e.nativeEvent.coordinate.longitude);
+              }}
+            >
+              {shopLatitude !== null && shopLongitude !== null && (
+                <Marker
+                  coordinate={{ latitude: shopLatitude, longitude: shopLongitude }}
+                  pinColor={colors.primary}
+                />
+              )}
+            </MapView>
+          </View>
+        </Modal>
+
         {/* Save */}
         <TouchableOpacity
           style={[styles.saveButton, loading && { opacity: 0.7 }]}
@@ -388,4 +456,67 @@ const styles = StyleSheet.create({
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 3,
   },
   saveButtonText: { color: colors.white, fontSize: 16, fontWeight: '600' },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.slate600,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  locationPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.slate200,
+    marginBottom: 4,
+  },
+  locationPickerLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.slate500,
+    marginBottom: 2,
+  },
+  locationPickerText: {
+    fontSize: 13,
+    color: colors.slate400,
+  },
+  locationPickerTextSet: {
+    color: colors.slate700,
+  },
+  mapModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.slate200,
+  },
+  mapModalTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.slate900,
+    flex: 1,
+    textAlign: 'center',
+  },
+  mapModalDone: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  shopPin: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.white,
+  },
 });

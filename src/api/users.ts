@@ -6,6 +6,7 @@ import {
   UserPhoneUpdate,
   UserNameUpdate,
   ResponseMessage,
+  SendPhoneChangeOtpRequest,
 } from '../types';
 
 export const usersApi = {
@@ -29,6 +30,9 @@ export const usersApi = {
 
   updatePhone: (data: UserPhoneUpdate) =>
     apiClient.put<ResponseMessage>('/api/v1/users/phone', data),
+
+  sendPhoneChangeOtp: (data: SendPhoneChangeOtpRequest) =>
+    apiClient.post<ResponseMessage>('/api/v1/users/phone/send-otp', data),
 
   uploadProfilePicture: (file: FormData) =>
     apiClient.post<ResponseMessage>('/api/v1/users/picture', file, {

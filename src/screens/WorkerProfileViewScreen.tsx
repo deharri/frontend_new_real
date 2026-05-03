@@ -1,12 +1,14 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useWorker } from '../context/WorkerContext';
+import { workersApi } from '../api/workers';
 import { colors } from '../theme/colors';
-import { RootStackParamList } from '../types';
+import { RootStackParamList, AvailabilityStatus } from '../types';
+import { logger } from '../utils/logger';
 
 const workerTypeLabels: Record<string, string> = {
   MECHANIC: 'Mechanic',
@@ -23,7 +25,41 @@ const workerTypeLabels: Record<string, string> = {
 export function WorkerProfileViewScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { workerProfile, switchToCustomerMode } = useWorker();
+  const { workerProfile, switchToCustomerMode, fetchWorkerProfile } = useWorker();
+  const [showAvailability, setShowAvailability] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [reason, setReason] = useState('');
+
+  // Refresh worker profile when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchWorkerProfile();
+    }, [fetchWorkerProfile])
+  );
+
+  const handleUpdateAvailability = async (status: AvailabilityStatus) => {
+    if (status === 'UNAVAILABLE' && !reason.trim()) {
+      Alert.alert('Reason Required', 'Please provide a reason for being unavailable.');
+      return;
+    }
+    setUpdatingStatus(true);
+    try {
+      await workersApi.updateAvailability({
+        status,
+        unavailabilityReason: status === 'UNAVAILABLE' ? reason.trim() : null,
+        unavailableFrom: null,
+        unavailableUntil: null,
+      });
+      await fetchWorkerProfile();
+      setShowAvailability(false);
+      setReason('');
+    } catch (err: any) {
+      logger.error('WorkerProfile', 'Failed to update availability', err.message);
+      Alert.alert('Error', 'Failed to update availability status.');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
 
   if (!workerProfile) {
     return (
@@ -90,6 +126,89 @@ export function WorkerProfileViewScreen() {
           <Text style={styles.statValue}>Rs. {worker.hourlyRate || 0}</Text>
           <Text style={styles.statLabel}>Per Hour</Text>
         </View>
+      </View>
+
+      {/* Availability Management */}
+      <View style={styles.infoSection}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={styles.infoTitle}>Availability</Text>
+          <TouchableOpacity onPress={() => setShowAvailability(!showAvailability)}>
+            <Ionicons name={showAvailability ? 'chevron-up' : 'chevron-down'} size={20} color={colors.slate500} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.detailRow}>
+          <Ionicons
+            name={isAvailable ? 'checkmark-circle' : worker.availabilityStatus === 'BUSY' ? 'time' : 'close-circle'}
+            size={18}
+            color={isAvailable ? colors.green600 : worker.availabilityStatus === 'BUSY' ? colors.amber600 : colors.red600}
+          />
+          <Text style={styles.detailText}>
+            {isAvailable ? 'Available for work' : worker.availabilityStatus === 'BUSY' ? 'Currently busy' : 'Unavailable'}
+          </Text>
+        </View>
+
+        {worker.unavailabilityReason && !isAvailable ? (
+          <Text style={[styles.detailText, { marginTop: 6, marginLeft: 28, color: colors.slate500, fontSize: 13 }]}>
+            Reason: {worker.unavailabilityReason}
+          </Text>
+        ) : null}
+
+        {showAvailability && (
+          <View style={{ marginTop: 14, gap: 10 }}>
+            {updatingStatus ? (
+              <ActivityIndicator color={colors.green600} />
+            ) : (
+              <>
+                <View style={styles.availabilityOptions}>
+                  {(['AVAILABLE', 'BUSY', 'UNAVAILABLE'] as AvailabilityStatus[]).map((s) => {
+                    const active = worker.availabilityStatus === s;
+                    const iconName = s === 'AVAILABLE' ? 'checkmark-circle' : s === 'BUSY' ? 'time' : 'close-circle';
+                    const iconColor = s === 'AVAILABLE' ? colors.green600 : s === 'BUSY' ? colors.amber600 : colors.red600;
+                    const bgColor = s === 'AVAILABLE' ? colors.green50 : s === 'BUSY' ? colors.amber100 : colors.red50;
+                    const borderColor = s === 'AVAILABLE' ? colors.green500 : s === 'BUSY' ? colors.amber400 : colors.red600;
+                    return (
+                      <TouchableOpacity
+                        key={s}
+                        style={[
+                          styles.availabilityOption,
+                          { backgroundColor: active ? bgColor : colors.slate50, borderColor: active ? borderColor : colors.slate200 },
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          if (s === 'UNAVAILABLE') return; // let them fill reason first
+                          handleUpdateAvailability(s);
+                        }}
+                      >
+                        <Ionicons name={iconName} size={18} color={iconColor} />
+                        <Text style={[styles.availabilityOptionText, active && { fontWeight: '700' }]}>
+                          {s === 'AVAILABLE' ? 'Available' : s === 'BUSY' ? 'Busy' : 'Unavailable'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <TextInput
+                  style={styles.reasonInput}
+                  placeholder="Reason for unavailability (required for Unavailable)"
+                  placeholderTextColor={colors.slate400}
+                  value={reason}
+                  onChangeText={setReason}
+                  multiline
+                />
+                <TouchableOpacity
+                  style={[styles.unavailableButton, !reason.trim() && { opacity: 0.5 }]}
+                  activeOpacity={0.7}
+                  onPress={() => handleUpdateAvailability('UNAVAILABLE')}
+                  disabled={!reason.trim()}
+                >
+                  <Text style={styles.unavailableButtonText}>Set as Unavailable</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Bio */}
@@ -207,7 +326,7 @@ export function WorkerProfileViewScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.slate50 },
-  scrollContent: { paddingBottom: 40 },
+  scrollContent: { paddingBottom: 100 },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.slate50 },
   emptyText: { fontSize: 16, color: colors.slate500, marginTop: 12 },
   header: {
@@ -271,4 +390,19 @@ const styles = StyleSheet.create({
     borderRadius: 14, height: 52, borderWidth: 1, borderColor: colors.green500, backgroundColor: colors.white, gap: 8,
   },
   switchModeText: { color: colors.green600, fontSize: 16, fontWeight: '600' },
+  availabilityOptions: { flexDirection: 'row', gap: 8 },
+  availabilityOption: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 10, borderRadius: 10, borderWidth: 1,
+  },
+  availabilityOptionText: { fontSize: 13, color: colors.slate700 },
+  reasonInput: {
+    backgroundColor: colors.slate50, borderRadius: 10, borderWidth: 1, borderColor: colors.slate200,
+    padding: 12, fontSize: 14, color: colors.slate700, minHeight: 44, textAlignVertical: 'top',
+  },
+  unavailableButton: {
+    backgroundColor: colors.red600, borderRadius: 10, height: 44,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  unavailableButtonText: { color: colors.white, fontSize: 14, fontWeight: '600' },
 });

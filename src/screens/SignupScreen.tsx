@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Logo } from '../components/Logo';
 import { useAuth } from '../context/AuthContext';
+import { authApi } from '../api/auth';
 import { colors } from '../theme/colors';
 import { RootStackParamList } from '../types';
 
@@ -24,6 +26,7 @@ type Props = {
 
 export function SignupScreen({ navigation }: Props) {
   const { register } = useAuth();
+  const insets = useSafeAreaInsets();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -59,6 +62,8 @@ export function SignupScreen({ navigation }: Props) {
 
     setLoading(true);
     try {
+      // SMS OTP verification disabled — register directly.
+      // To re-enable: replace this block with sendOtp + nav.navigate('OtpVerification', ...)
       await register({
         firstName,
         lastName,
@@ -66,12 +71,12 @@ export function SignupScreen({ navigation }: Props) {
         phoneNumber,
         password,
         rememberMe: false,
+        otpCode: '',
       });
     } catch (error: any) {
       let message = 'Something went wrong. Please try again.';
       if (error.response?.data) {
         const data = error.response.data;
-        // Backend may return field validation errors
         if (data.errors && typeof data.errors === 'object') {
           message = Object.values(data.errors).join('\n');
         } else if (data.fieldErrors && Array.isArray(data.fieldErrors)) {
@@ -92,7 +97,7 @@ export function SignupScreen({ navigation }: Props) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
@@ -241,25 +246,6 @@ export function SignupScreen({ navigation }: Props) {
             )}
           </TouchableOpacity>
 
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or sign up with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Social Signup */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialButton}>
-              <Ionicons name="logo-google" size={20} color="#DB4437" />
-              <Text style={styles.socialButtonText}>Google</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton}>
-              <Ionicons name="logo-facebook" size={20} color="#1877F2" />
-              <Text style={styles.socialButtonText}>Facebook</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Login Link */}
           <View style={styles.switchRow}>
             <Text style={styles.switchText}>Already have an account? </Text>
@@ -390,42 +376,6 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 16,
     fontWeight: '600',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.slate200,
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-    color: colors.gray500,
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  socialButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 48,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.slate300,
-    gap: 8,
-  },
-  socialButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.slate700,
   },
   switchRow: {
     flexDirection: 'row',

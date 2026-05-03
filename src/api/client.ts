@@ -6,28 +6,47 @@ import { logger } from '../utils/logger';
 
 const TAG = 'ApiClient';
 
-// Dynamically get the host IP from Expo's dev server
+// GCP backend IP — set EXPO_PUBLIC_GCP_BACKEND_IP in .env after deploying to GCP
+const GCP_IP = process.env.EXPO_PUBLIC_GCP_BACKEND_IP;
+
 const getBaseUrl = () => {
+  // 1. GCP deployment — use static public IP (works with any APK, anywhere)
+  if (GCP_IP && GCP_IP.trim() !== '') {
+    const url = `http://${GCP_IP.trim()}:8080/ums`;
+    logger.info(TAG, `Base URL → GCP backend: ${url}`);
+    return url;
+  }
+
+  // 2. Local development via Expo dev server — dynamic IP resolution
   const debuggerHost =
     Constants.expoConfig?.hostUri ??
+    (Constants as any).expoGoConfig?.debuggerHost ??
     (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ??
     (Constants as any).manifest?.debuggerHost;
 
   if (debuggerHost) {
     const host = debuggerHost.split(':')[0];
-    const url = `http://${host}:8080/ums`;
-    logger.info(TAG, `Base URL resolved from Expo debuggerHost: ${url} (raw: ${debuggerHost})`);
-    return url;
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      const url = `http://${host}:8080/ums`;
+      logger.info(TAG, `Base URL → local dev (${url})`);
+      return url;
+    }
+    if (host === 'localhost' || host === '127.0.0.1') {
+      const url = 'http://localhost:8080/ums';
+      logger.info(TAG, `Base URL → adb reverse (${url})`);
+      return url;
+    }
   }
 
+  // 3. Android emulator fallback
   if (Platform.OS === 'android') {
     const url = 'http://10.0.2.2:8080/ums';
-    logger.info(TAG, `Base URL fallback (Android emulator): ${url}`);
+    logger.info(TAG, `Base URL → Android emulator fallback (${url})`);
     return url;
   }
 
   const url = 'http://localhost:8080/ums';
-  logger.warn(TAG, `Base URL fallback (localhost): ${url} — may not work on physical devices`);
+  logger.warn(TAG, `Base URL → localhost fallback — may not work on physical devices`);
   return url;
 };
 

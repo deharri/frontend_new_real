@@ -29,8 +29,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const token = await AsyncStorage.getItem('accessToken');
       if (token) {
+        const storedUsername = await AsyncStorage.getItem('username');
         const response = await usersApi.getMyProfile();
-        setUser(response.data);
+        setUser({ ...response.data, username: storedUsername || undefined });
         setIsLoggedIn(true);
       }
     } catch {
@@ -44,9 +45,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await authApi.login(data);
     await AsyncStorage.setItem('accessToken', response.data.accessToken);
     await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
+    await AsyncStorage.setItem('username', data.username);
     try {
       const profileResponse = await usersApi.getMyProfile();
-      setUser(profileResponse.data);
+      setUser({ ...profileResponse.data, username: data.username });
     } catch {
       // Profile fetch may fail if user profile isn't fully set up yet
     }
@@ -57,8 +59,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const response = await authApi.register(data);
     await AsyncStorage.setItem('accessToken', response.data.accessToken);
     await AsyncStorage.setItem('refreshToken', response.data.refreshToken);
+    await AsyncStorage.setItem('username', data.username);
     setUser({
       userId: '',
+      username: data.username,
       firstName: data.firstName,
       lastName: data.lastName,
       email: null,
@@ -77,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Ignore logout errors
     } finally {
-      await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'workerMode']);
+      await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'workerMode', 'username']);
       setUser(null);
       setIsLoggedIn(false);
     }
@@ -85,8 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = async () => {
     try {
+      const storedUsername = await AsyncStorage.getItem('username');
       const response = await usersApi.getMyProfile();
-      setUser(response.data);
+      setUser({ ...response.data, username: storedUsername || undefined });
     } catch {
       // Ignore
     }

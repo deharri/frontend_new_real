@@ -13,9 +13,12 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { workersApi } from '../api/workers';
+import { chatApi } from '../api/chat';
+import { jobsApi } from '../api/jobs';
+import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme/colors';
 import { logger } from '../utils/logger';
-import { RootStackParamList, WorkerProfile } from '../types';
+import { RootStackParamList, WorkerProfile, RatingSummary } from '../types';
 
 const TAG = 'WorkerDetail';
 
@@ -38,9 +41,12 @@ type Props = {
 
 export function WorkerDetailScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const { workerId } = route.params;
   const [worker, setWorker] = useState<WorkerProfile | null>(null);
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [subscriptionRequired, setSubscriptionRequired] = useState(false);
 
   useEffect(() => {
     fetchWorker();
@@ -52,7 +58,19 @@ export function WorkerDetailScreen({ navigation, route }: Props) {
       const response = await workersApi.getWorkerById(workerId);
       setWorker(response.data);
       logger.info(TAG, 'Worker fetched', response.data);
+
+      // Fetch rating summary from job service
+      try {
+        const summaryRes = await jobsApi.getWorkerRatingSummary(response.data.workerId);
+        setRatingSummary(summaryRes.data);
+      } catch {
+        // May not have any reviews yet
+      }
     } catch (error: any) {
+      if ((error as any)?.response?.status === 403) {
+        setSubscriptionRequired(true);
+        return;
+      }
       logger.error(TAG, 'Failed to fetch worker', error.message);
       Alert.alert('Error', 'Failed to load worker profile');
       navigation.goBack();
@@ -69,15 +87,36 @@ export function WorkerDetailScreen({ navigation, route }: Props) {
     );
   }
 
+  if (subscriptionRequired) {
+    return (
+      <View style={[styles.lockedContainer, { paddingTop: insets.top }]}>
+        <TouchableOpacity style={styles.lockedBack} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={22} color={colors.slate700} />
+        </TouchableOpacity>
+        <View style={styles.lockedContent}>
+          <Ionicons name="lock-closed" size={56} color={colors.slate300} />
+          <Text style={styles.lockedTitle}>Profile Unavailable</Text>
+          <Text style={styles.lockedText}>
+            This worker has not activated their subscription and is currently unavailable for hire.
+          </Text>
+          <TouchableOpacity style={styles.lockedBackBtn} onPress={() => navigation.goBack()}>
+            <Text style={styles.lockedBackBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   if (!worker) return null;
 
+  const isOwnProfile = worker.userId === user?.userId;
   const isAvailable = worker.availabilityStatus === 'AVAILABLE';
   const fullStars = Math.floor(worker.averageRating || 0);
 
   return (
     <ScrollView
       style={[styles.container, { paddingTop: insets.top }]}
-      contentContainerStyle={styles.scrollContent}
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + insets.bottom }]}
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
@@ -185,23 +224,6 @@ export function WorkerDetailScreen({ navigation, route }: Props) {
         </View>
       )}
 
-      {/* Contact */}
-      <View style={styles.infoSection}>
-        <Text style={styles.infoTitle}>Contact</Text>
-        {worker.phoneNumber && (
-          <View style={styles.detailRow}>
-            <Ionicons name="call" size={18} color={colors.green600} />
-            <Text style={styles.detailText}>{worker.phoneNumber}</Text>
-          </View>
-        )}
-        {worker.email && (
-          <View style={[styles.detailRow, { marginTop: 8 }]}>
-            <Ionicons name="mail" size={18} color={colors.primary} />
-            <Text style={styles.detailText}>{worker.email}</Text>
-          </View>
-        )}
-      </View>
-
       {/* Agency */}
       {worker.agency && (
         <View style={styles.infoSection}>
@@ -228,32 +250,88 @@ export function WorkerDetailScreen({ navigation, route }: Props) {
             </View>
           ) : null}
         </View>
-        <TouchableOpacity
-          style={[styles.bookButton, !isAvailable && styles.bookButtonDisabled]}
-          disabled={!isAvailable}
-        >
-          <Ionicons name="call" size={18} color={isAvailable ? colors.white : colors.slate500} />
-          <Text style={[styles.bookButtonText, !isAvailable && { color: colors.slate500 }]}>
-            {isAvailable ? 'Book Now' : 'Unavailable'}
-          </Text>
-        </TouchableOpacity>
+        {!isOwnProfile && (
+          <TouchableOpacity
+            style={styles.chatButton}
+            activeOpacity={0.7}
+            onPress={async () => {
+              try {
+                // Backend returns existing conversation if one already exists
+                const res = await chatApi.createConversation({
+                  senderContext: 'CONSUMER',
+                  targetContext: 'WORKER',
+                  targetUserId: worker.userId,
+                  type: 'DIRECT',
+                });
+                navigation.navigate('ChatDetail', {
+                  conversationId: res.data.id,
+                  participantName: `${worker.firstName} ${worker.lastName}`,
+                  participantAvatar: worker.profilePictureUrl,
+                });
+              } catch (err: any) {
+                Alert.alert('Error', 'Could not start conversation.');
+              }
+            }}
+          >
+            <Ionicons name="chatbubble" size={20} color={colors.white} />
+            <Text style={styles.chatButtonText}>Message</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Verification */}
-      <View style={styles.infoSection}>
-        <Text style={styles.infoTitle}>Verification</Text>
-        <View style={styles.detailRow}>
-          <Ionicons
-            name={worker.isVerified ? 'shield-checkmark' : 'shield-outline'}
-            size={18}
-            color={worker.isVerified ? colors.green600 : colors.slate400}
-          />
-          <Text style={styles.detailText}>
-            {worker.isVerified ? 'Verified Worker' : `Status: ${worker.verificationStatus || 'Unverified'}`}
-          </Text>
+      {/* Rating Breakdown */}
+      {ratingSummary && ratingSummary.totalReviews > 0 && (
+        <View style={styles.infoSection}>
+          <Text style={styles.infoTitle}>Ratings ({ratingSummary.totalReviews} review{ratingSummary.totalReviews !== 1 ? 's' : ''})</Text>
+          <View style={styles.ratingSummaryRow}>
+            <Text style={styles.ratingBig}>{ratingSummary.averageRating.toFixed(1)}</Text>
+            <View style={{ gap: 4, flex: 1 }}>
+              {ratingSummary.averageQualityRating > 0 && (
+                <RatingBar label="Quality" value={ratingSummary.averageQualityRating} />
+              )}
+              {ratingSummary.averagePunctualityRating > 0 && (
+                <RatingBar label="Punctuality" value={ratingSummary.averagePunctualityRating} />
+              )}
+              {ratingSummary.averageCommunicationRating > 0 && (
+                <RatingBar label="Communication" value={ratingSummary.averageCommunicationRating} />
+              )}
+              {ratingSummary.averageValueRating > 0 && (
+                <RatingBar label="Value" value={ratingSummary.averageValueRating} />
+              )}
+            </View>
+          </View>
         </View>
-      </View>
+      )}
+
+      {/* Verification — only visible to the worker themselves */}
+      {isOwnProfile && (
+        <View style={styles.infoSection}>
+          <Text style={styles.infoTitle}>Verification</Text>
+          <View style={styles.detailRow}>
+            <Ionicons
+              name={worker.isVerified ? 'shield-checkmark' : 'shield-outline'}
+              size={18}
+              color={worker.isVerified ? colors.green600 : colors.slate400}
+            />
+            <Text style={styles.detailText}>
+              {worker.isVerified ? 'Verified Worker' : `Status: ${worker.verificationStatus || 'Unverified'}`}
+            </Text>
+          </View>
+        </View>
+      )}
     </ScrollView>
+  );
+}
+
+function RatingBar({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={styles.ratingBarRow}>
+      <Text style={styles.ratingBarLabel}>{label}</Text>
+      <View style={styles.ratingBarTrack}>
+        <View style={[styles.ratingBarFill, { width: `${(value / 5) * 100}%` }]} />
+      </View>
+      <Text style={styles.ratingBarValue}>{value.toFixed(1)}</Text>
+    </View>
   );
 }
 
@@ -307,7 +385,60 @@ const styles = StyleSheet.create({
   priceItem: { flex: 1, backgroundColor: colors.slate50, padding: 14, borderRadius: 10, alignItems: 'center' },
   priceValue: { fontSize: 20, fontWeight: '700', color: colors.primary },
   priceLabel: { fontSize: 13, color: colors.slate500, marginTop: 2 },
-  bookButton: { backgroundColor: colors.primary, borderRadius: 12, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
-  bookButtonDisabled: { backgroundColor: colors.slate200 },
-  bookButtonText: { color: colors.white, fontSize: 16, fontWeight: '600' },
+  chatButton: { backgroundColor: colors.primary, borderRadius: 12, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  chatButtonText: { color: colors.white, fontSize: 16, fontWeight: '600' },
+  ratingSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  ratingBig: { fontSize: 36, fontWeight: '700', color: colors.amber600 },
+  ratingBarRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  ratingBarLabel: { fontSize: 12, color: colors.slate500, width: 90 },
+  ratingBarTrack: { flex: 1, height: 6, backgroundColor: colors.slate200, borderRadius: 3, overflow: 'hidden' },
+  ratingBarFill: { height: 6, backgroundColor: colors.amber400, borderRadius: 3 },
+  ratingBarValue: { fontSize: 12, fontWeight: '600', color: colors.slate700, width: 24, textAlign: 'right' },
+  lockedContainer: {
+    flex: 1,
+    backgroundColor: colors.slate50,
+  },
+  lockedBack: {
+    margin: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.slate200,
+  },
+  lockedContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    marginTop: -60,
+  },
+  lockedTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.slate700,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  lockedText: {
+    fontSize: 14,
+    color: colors.slate500,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 28,
+  },
+  lockedBackBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+  },
+  lockedBackBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.white,
+  },
 });

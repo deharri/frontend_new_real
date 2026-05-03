@@ -55,9 +55,11 @@ export function EditProfileScreen({ navigation }: Props) {
   const [newEmail, setNewEmail] = useState('');
   const [emailLoading, setEmailLoading] = useState(false);
 
-  // Phone update
+  // Phone update (two-step: send OTP, then verify)
   const [oldPasswordForPhone, setOldPasswordForPhone] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [phoneOtp, setPhoneOtp] = useState('');
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
   const [phoneLoading, setPhoneLoading] = useState(false);
 
   const showResult = (title: string, success: boolean, message: string) => {
@@ -247,6 +249,9 @@ export function EditProfileScreen({ navigation }: Props) {
     }
   };
 
+  // SMS OTP verification disabled — single-step phone update.
+  // To re-enable, restore the two-step handleSendPhoneOtp + handlePhoneUpdate flow
+  // (see git history) and pass otpCode in the updatePhone call.
   const handlePhoneUpdate = async () => {
     if (!oldPasswordForPhone || !newPhone) {
       return showResult('Error', false, 'Please fill in password and new phone number');
@@ -254,7 +259,11 @@ export function EditProfileScreen({ navigation }: Props) {
     setPhoneLoading(true);
     try {
       logger.info(TAG, 'Updating phone...');
-      const res = await usersApi.updatePhone({ oldPassword: oldPasswordForPhone, newPhoneNumber: newPhone });
+      const res = await usersApi.updatePhone({
+        oldPassword: oldPasswordForPhone,
+        newPhoneNumber: newPhone,
+        otpCode: '',
+      });
       logger.info(TAG, 'Phone updated', res.data);
       showResult('Success', true, res.data.message || 'Phone number updated successfully');
       setOldPasswordForPhone('');
@@ -281,7 +290,7 @@ export function EditProfileScreen({ navigation }: Props) {
     >
       <ScrollView
         style={{ paddingTop: insets.top }}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

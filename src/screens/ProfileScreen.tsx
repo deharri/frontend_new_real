@@ -1,11 +1,15 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Platform, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
+import { useAgency } from '../context/AgencyContext';
+import { useWorker } from '../context/WorkerContext';
+import { agenciesApi } from '../api/agencies';
 import { ModeSwitchBanner } from '../components/ModeSwitchBanner';
+import { jobsApi } from '../api/jobs';
 import { colors } from '../theme/colors';
 import { logger } from '../utils/logger';
 import { RootStackParamList } from '../types';
@@ -17,6 +21,37 @@ export function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, logout } = useAuth();
+  const { hasAgency, agencyProfile, isAgencyActive, daysUntilExpiry, isAgencyMode, switchToAgencyMode, switchToCustomerMode: switchToCustomerFromAgency } = useAgency();
+  const { workerProfile, fetchWorkerProfile } = useWorker();
+  // True iff the user has a worker profile that's currently a member of some agency.
+  const isWorkerInAgency = !!workerProfile?.agency;
+
+  const [completedJobs, setCompletedJobs] = useState<number>(0);
+  const [avgRating, setAvgRating] = useState<number | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      const fetchStats = async () => {
+        try {
+          const res = await jobsApi.getMyListings(0, 100);
+          const completed = res.data.listings.filter(l => l.status === 'COMPLETED').length;
+          setCompletedJobs(completed);
+        } catch {
+          // ignore
+        }
+
+        if (user?.userId) {
+          try {
+            const ratingRes = await jobsApi.getConsumerRatingSummary(user.userId);
+            setAvgRating(ratingRes.data.averageRating);
+          } catch {
+            // ignore — no reviews yet
+          }
+        }
+      };
+      fetchStats();
+    }, [user?.userId])
+  );
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -64,12 +99,12 @@ export function ProfileScreen() {
         </View>
 
         <View style={styles.contactInfo}>
-          {user?.email && (
-            <View style={styles.contactRow}>
-              <Ionicons name="mail-outline" size={16} color="rgba(255,255,255,0.8)" />
-              <Text style={styles.contactText}>{user.email}</Text>
-            </View>
-          )}
+          <View style={styles.contactRow}>
+            <Ionicons name="mail-outline" size={16} color="rgba(255,255,255,0.8)" />
+            <Text style={[styles.contactText, !user?.email && styles.contactPlaceholder]}>
+              {user?.email || 'No email added'}
+            </Text>
+          </View>
           {user?.phoneNumber && (
             <View style={styles.contactRow}>
               <Ionicons name="call-outline" size={16} color="rgba(255,255,255,0.8)" />
@@ -89,20 +124,108 @@ export function ProfileScreen() {
           <View style={[styles.statIcon, { backgroundColor: colors.green100 }]}>
             <Ionicons name="calendar" size={24} color={colors.green600} />
           </View>
-          <Text style={styles.statValue}>0</Text>
+          <Text style={styles.statValue}>{completedJobs}</Text>
           <Text style={styles.statLabel}>Total Bookings</Text>
         </View>
         <View style={styles.statCard}>
           <View style={[styles.statIcon, { backgroundColor: colors.amber100 }]}>
             <Ionicons name="star" size={24} color={colors.amber600} />
           </View>
-          <Text style={styles.statValue}>-</Text>
+          <Text style={styles.statValue}>{avgRating != null ? avgRating.toFixed(1) : '-'}</Text>
           <Text style={styles.statLabel}>Avg Rating</Text>
         </View>
       </View>
 
       {/* Worker Mode Switch */}
       <ModeSwitchBanner />
+
+      {/* Agency CTAs */}
+      {!hasAgency && !isWorkerInAgency && (
+        <TouchableOpacity
+          style={agencyStyles.primaryCta}
+          onPress={() => navigation.navigate('CreateAgency')}
+          activeOpacity={0.8}>
+          <Ionicons name="business" size={18} color="white" />
+          <Text style={agencyStyles.ctaText}>Become an Agency — Rs. 10,000/mo</Text>
+        </TouchableOpacity>
+      )}
+      {!hasAgency && isWorkerInAgency && (
+        <View style={agencyStyles.disabledCta}>
+          <Ionicons name="information-circle" size={18} color={colors.mutedForeground} />
+          <Text style={agencyStyles.disabledCtaText}>
+            You're currently in {workerProfile?.agency?.agencyName}. Leave first to create your own agency.
+          </Text>
+        </View>
+      )}
+      {isWorkerInAgency && (
+        <TouchableOpacity
+          style={agencyStyles.leaveCta}
+          onPress={() => {
+            Alert.alert(
+              'Leave agency?',
+              `You will no longer be a member of ${workerProfile?.agency?.agencyName}. Past job records stay intact.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Leave',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await agenciesApi.leaveCurrentAgency();
+                      await fetchWorkerProfile();
+                      Alert.alert('Left agency', 'You can now join another agency or create your own.');
+                    } catch (err: any) {
+                      Alert.alert('Error', err?.response?.data?.message ?? 'Failed to leave agency.');
+                    }
+                  },
+                },
+              ],
+            );
+          }}
+          activeOpacity={0.8}>
+          <Ionicons name="exit-outline" size={18} color="white" />
+          <Text style={agencyStyles.ctaText}>
+            Leave {workerProfile?.agency?.agencyName ?? 'agency'}
+          </Text>
+        </TouchableOpacity>
+      )}
+      {hasAgency && !isAgencyActive && agencyProfile && (
+        <TouchableOpacity
+          style={agencyStyles.warnCta}
+          onPress={() =>
+            navigation.navigate('AgencySubscriptionPayment', { agencyId: agencyProfile.agencyId })
+          }
+          activeOpacity={0.8}>
+          <Ionicons name="alert-circle" size={18} color="white" />
+          <Text style={agencyStyles.ctaText}>Your agency is expired — renew now</Text>
+        </TouchableOpacity>
+      )}
+      {hasAgency && isAgencyActive && !isAgencyMode && (
+        <TouchableOpacity
+          style={agencyStyles.primaryCta}
+          onPress={() => {
+            switchToAgencyMode();
+            navigation.reset({ index: 0, routes: [{ name: 'AgencyTabs' }] });
+          }}
+          activeOpacity={0.8}>
+          <Ionicons name="business" size={18} color="white" />
+          <Text style={agencyStyles.ctaText}>
+            Switch to Agency Mode ({daysUntilExpiry} days left)
+          </Text>
+        </TouchableOpacity>
+      )}
+      {hasAgency && isAgencyActive && isAgencyMode && (
+        <TouchableOpacity
+          style={agencyStyles.primaryCta}
+          onPress={() => {
+            switchToCustomerFromAgency();
+            navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+          }}
+          activeOpacity={0.8}>
+          <Ionicons name="person" size={18} color="white" />
+          <Text style={agencyStyles.ctaText}>Switch to Customer Mode</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Debug Info */}
       <View style={styles.debugCard}>
@@ -123,6 +246,22 @@ export function ProfileScreen() {
         >
           <Ionicons name="create-outline" size={18} color={colors.white} />
           <Text style={styles.editButtonText}>Edit Profile</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.menuButton}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Payments')}>
+          <Ionicons name="card-outline" size={18} color={colors.foreground} />
+          <Text style={styles.menuButtonText}>Payments</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.gray400} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.menuButton}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('ResolutionCenter')}>
+          <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.foreground} />
+          <Text style={styles.menuButtonText}>Resolution Center</Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.gray400} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.7}>
           <Ionicons name="log-out-outline" size={18} color={colors.red600} />
@@ -169,6 +308,7 @@ const styles = StyleSheet.create({
   },
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   contactText: { fontSize: 14, color: colors.white },
+  contactPlaceholder: { fontStyle: 'italic', opacity: 0.6 },
   statsRow: { flexDirection: 'row', gap: 14, marginBottom: 16 },
   statCard: {
     flex: 1, backgroundColor: colors.white, borderRadius: 14, padding: 20, alignItems: 'center',
@@ -196,4 +336,55 @@ const styles = StyleSheet.create({
     borderRadius: 14, height: 52, borderWidth: 1, borderColor: '#fecaca', backgroundColor: colors.white, gap: 8,
   },
   logoutButtonText: { color: colors.red600, fontSize: 16, fontWeight: '600' },
+  menuButton: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.white, borderRadius: 14, height: 52,
+    paddingHorizontal: 16, gap: 12,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  menuButtonText: { flex: 1, color: colors.foreground, fontSize: 15, fontWeight: '500' },
+});
+
+const agencyStyles = StyleSheet.create({
+  primaryCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: colors.primary,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  warnCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#f59e0b',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  ctaText: { color: 'white', fontWeight: '700', fontSize: 14 },
+  leaveCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: colors.red600,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  disabledCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.slate100,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  disabledCtaText: { color: colors.mutedForeground, flex: 1, fontSize: 13 },
 });

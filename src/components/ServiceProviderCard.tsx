@@ -7,6 +7,7 @@ import { WorkerListItem } from '../types';
 interface ServiceProviderCardProps {
   worker: WorkerListItem;
   onPress?: () => void;
+  onMessage?: () => void;
 }
 
 const workerTypeLabels: Record<string, string> = {
@@ -21,7 +22,7 @@ const workerTypeLabels: Record<string, string> = {
   GENERAL_LABORER: 'General Laborer',
 };
 
-export function ServiceProviderCard({ worker, onPress }: ServiceProviderCardProps) {
+export function ServiceProviderCard({ worker, onPress, onMessage }: ServiceProviderCardProps) {
   const initials = `${worker.firstName?.[0] || ''}${worker.lastName?.[0] || ''}`.toUpperCase();
   const isAvailable = worker.availabilityStatus === 'AVAILABLE';
   const rating = worker.averageRating || 0;
@@ -103,14 +104,11 @@ export function ServiceProviderCard({ worker, onPress }: ServiceProviderCardProp
             </Text>
           </View>
           <TouchableOpacity
-            style={[styles.bookButton, !isAvailable && styles.bookButtonDisabled]}
-            disabled={!isAvailable}
-            onPress={onPress}
+            style={styles.messageButton}
+            onPress={onMessage}
           >
-            <Ionicons name="call" size={16} color={isAvailable ? colors.white : colors.slate500} />
-            <Text style={[styles.bookButtonText, !isAvailable && styles.bookButtonTextDisabled]}>
-              {isAvailable ? 'Book Now' : 'Unavailable'}
-            </Text>
+            <Ionicons name="chatbubble-ellipses" size={16} color={colors.white} />
+            <Text style={styles.messageButtonText}>Message</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -261,7 +259,7 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     color: colors.slate500,
   },
-  bookButton: {
+  messageButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.primary,
@@ -275,17 +273,9 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  bookButtonDisabled: {
-    backgroundColor: colors.slate300,
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  bookButtonText: {
+  messageButtonText: {
     color: colors.white,
     fontSize: 14,
     fontWeight: '600',
-  },
-  bookButtonTextDisabled: {
-    color: colors.slate500,
   },
 });

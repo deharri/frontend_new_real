@@ -12,6 +12,8 @@ const categories = [
   { id: 'HVAC_TECHNICIAN', label: 'AC Repair', icon: 'snow-outline' as const, color: colors.categoryAC },
   { id: 'MASON', label: 'Mason', icon: 'construct-outline' as const, color: colors.categoryMason },
   { id: 'WELDER', label: 'Welder', icon: 'flame-outline' as const, color: colors.categoryWelder },
+  { id: 'MECHANIC', label: 'Mechanic', icon: 'car-outline' as const, color: colors.categoryGeneral },
+  { id: 'GENERAL_LABORER', label: 'Laborer', icon: 'body-outline' as const, color: colors.categoryGeneral },
 ];
 
 interface CategoryFilterProps {

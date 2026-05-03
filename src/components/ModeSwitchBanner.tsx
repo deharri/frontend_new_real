@@ -9,7 +9,7 @@ import { RootStackParamList } from '../types';
 
 export function ModeSwitchBanner() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { hasWorkerProfile, isLoadingWorker, switchToWorkerMode } = useWorker();
+  const { hasWorkerProfile, isLoadingWorker, isSubscribed, switchToWorkerMode } = useWorker();
 
   if (isLoadingWorker) return null;
 
@@ -32,22 +32,37 @@ export function ModeSwitchBanner() {
     );
   }
 
+  const handleSwitchToWorker = () => {
+    if (isSubscribed) {
+      switchToWorkerMode();
+      navigation.reset({ index: 0, routes: [{ name: 'WorkerTabs' }] });
+    } else {
+      navigation.navigate('WorkerSubscription');
+    }
+  };
+
   return (
     <TouchableOpacity
       style={styles.switchBanner}
       activeOpacity={0.7}
-      onPress={() => {
-        switchToWorkerMode();
-        navigation.reset({ index: 0, routes: [{ name: 'WorkerTabs' }] });
-      }}
+      onPress={handleSwitchToWorker}
     >
       <View style={styles.bannerIcon}>
         <Ionicons name="swap-horizontal" size={24} color={colors.green700} />
       </View>
       <View style={styles.bannerContent}>
         <Text style={styles.bannerTitle}>Switch to Worker Mode</Text>
-        <Text style={styles.bannerSubtitle}>View and manage your work requests</Text>
+        <Text style={styles.bannerSubtitle}>
+          {isSubscribed
+            ? 'View and manage your work requests'
+            : 'Subscribe to activate your worker profile'}
+        </Text>
       </View>
+      {!isSubscribed && (
+        <View style={styles.subscriptionBadge}>
+          <Text style={styles.subscriptionBadgeText}>Rs. 999/mo</Text>
+        </View>
+      )}
       <Ionicons name="chevron-forward" size={20} color={colors.green600} />
     </TouchableOpacity>
   );
@@ -97,5 +112,16 @@ const styles = StyleSheet.create({
   bannerSubtitle: {
     fontSize: 13,
     color: colors.slate500,
+  },
+  subscriptionBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  subscriptionBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.white,
   },
 });

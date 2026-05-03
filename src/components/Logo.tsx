@@ -4,9 +4,10 @@ import { colors } from '../theme/colors';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
+  color?: string;
 }
 
-export function Logo({ size = 'md' }: LogoProps) {
+export function Logo({ size = 'md', color }: LogoProps) {
   const sizes = {
     sm: { container: 60, dSize: 48, emoji: 16, emojiOffset: 14 },
     md: { container: 80, dSize: 64, emoji: 20, emojiOffset: 18 },
@@ -17,7 +18,7 @@ export function Logo({ size = 'md' }: LogoProps) {
 
   return (
     <View style={[styles.container, { width: s.container, height: s.container }]}>
-      <Text style={[styles.dLetter, { fontSize: s.dSize }]}>D</Text>
+      <Text style={[styles.dLetter, { fontSize: s.dSize }, color ? { color, textShadowColor: 'rgba(255,255,255,0.35)' } : undefined]}>D</Text>
       <Text style={[styles.emoji, styles.topLeft, { fontSize: s.emoji, top: -s.emojiOffset * 0.3, left: -s.emojiOffset * 0.3 }]}>
         {'\u{1F527}'}
       </Text>
