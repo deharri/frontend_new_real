@@ -13,6 +13,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { agenciesApi } from '../api/agencies';
 import { CreateAgency, RootStackParamList, PakistanCity } from '../types';
 import { colors } from '../theme/colors';
+import { LocationPickerField } from '../components/LocationPickerField';
 
 const CITY_OPTIONS: PakistanCity[] = [
   'KARACHI', 'LAHORE', 'ISLAMABAD', 'RAWALPINDI', 'FAISALABAD',
@@ -21,16 +22,24 @@ const CITY_OPTIONS: PakistanCity[] = [
 
 export function CreateAgencyScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [form, setForm] = useState<CreateAgency>({
+  // latitude/longitude split out from the form so we can render the picker
+  // without the type ever being CreateAgency-with-null. They get folded back
+  // into the payload at submit time, after validation guarantees they're set.
+  const [form, setForm] = useState<Omit<CreateAgency, 'latitude' | 'longitude' | 'address'>>({
     agencyName: '',
     description: '',
     contactNumber: '',
     contactEmail: '',
     city: 'KARACHI',
-    address: '',
     serviceCities: ['KARACHI'],
     licenseNumber: '',
   });
+  // Address is split into building + street so Google Geocoding can find the
+  // pin reliably; the backend still receives one composed `address` string.
+  const [building, setBuilding] = useState('');
+  const [street, setStreet] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const onSubmit = async () => {
@@ -42,14 +51,27 @@ export function CreateAgencyScreen() {
       Alert.alert('Contact number is required');
       return;
     }
-    if (!form.address.trim()) {
-      Alert.alert('Address is required');
+    if (!building.trim() || !street.trim()) {
+      Alert.alert('Address required', 'Enter both building and street.');
+      return;
+    }
+    if (latitude == null || longitude == null) {
+      Alert.alert(
+        'Pin your office on the map',
+        'Tap "Find on map" or drop a pin so customers can find your office.',
+      );
       return;
     }
 
     setSubmitting(true);
     try {
-      const res = await agenciesApi.createAgency(form);
+      const composedAddress = `${building.trim()}, ${street.trim()}`;
+      const res = await agenciesApi.createAgency({
+        ...form,
+        address: composedAddress,
+        latitude,
+        longitude,
+      });
       const match = res.data.message.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/);
       const agencyId = match ? match[1] : null;
       if (!agencyId) {
@@ -122,13 +144,27 @@ export function CreateAgencyScreen() {
         ))}
       </View>
 
-      <Text style={styles.label}>Address *</Text>
-      <TextInput
-        style={styles.input}
-        value={form.address}
-        onChangeText={(v) => setForm({ ...form, address: v })}
-        placeholder="Street, area, landmark"
+      <LocationPickerField
+        label="Office address *"
+        building={building}
+        onBuildingChange={setBuilding}
+        street={street}
+        onStreetChange={setStreet}
+        city={form.city}
+        latitude={latitude}
+        longitude={longitude}
+        onLocationPicked={(lat, lng) => {
+          setLatitude(lat);
+          setLongitude(lng);
+        }}
+        onLocationCleared={() => {
+          setLatitude(null);
+          setLongitude(null);
+        }}
       />
+      <Text style={styles.helperText}>
+        Required — customers will use this pin to find your office on a map.
+      </Text>
 
       <Text style={styles.label}>License number (optional)</Text>
       <TextInput
@@ -139,10 +175,19 @@ export function CreateAgencyScreen() {
       />
 
       <TouchableOpacity
-        style={[styles.btn, submitting && styles.btnDisabled]}
+        style={[
+          styles.btn,
+          (submitting || latitude == null || longitude == null) && styles.btnDisabled,
+        ]}
         onPress={onSubmit}
-        disabled={submitting}>
-        <Text style={styles.btnText}>{submitting ? 'Creating…' : 'Continue to payment'}</Text>
+        disabled={submitting || latitude == null || longitude == null}>
+        <Text style={styles.btnText}>
+          {submitting
+            ? 'Creating…'
+            : latitude == null || longitude == null
+              ? 'Pin office on the map first'
+              : 'Continue to payment'}
+        </Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -161,6 +206,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     color: colors.foreground,
   },
+  helperText: { fontSize: 11, color: colors.mutedForeground, marginTop: 6 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chip: {
     paddingHorizontal: 12,

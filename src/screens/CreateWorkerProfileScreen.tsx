@@ -19,6 +19,7 @@ import { useWorker } from '../context/WorkerContext';
 import { colors } from '../theme/colors';
 import { logger } from '../utils/logger';
 import { RootStackParamList, WorkerType, PakistanCity, Language } from '../types';
+import { LocationPickerField } from '../components/LocationPickerField';
 
 const TAG = 'CreateWorkerProfile';
 
@@ -58,7 +59,14 @@ export function CreateWorkerProfileScreen({ navigation }: Props) {
   const [hourlyRate, setHourlyRate] = useState('');
   const [dailyRate, setDailyRate] = useState('');
   const [selectedCity, setSelectedCity] = useState<PakistanCity | null>(null);
-  const [area, setArea] = useState('');
+  // Shop pin — mandatory at signup so customers can find the worker on the map.
+  // Building + street are kept separate so Google Geocoding resolves cleanly;
+  // the existing `area` field below already serves as a freeform locality so
+  // we don't add a third address field.
+  const [shopBuilding, setShopBuilding] = useState('');
+  const [shopStreet, setShopStreet] = useState('');
+  const [shopLatitude, setShopLatitude] = useState<number | null>(null);
+  const [shopLongitude, setShopLongitude] = useState<number | null>(null);
   const [selectedServiceCities, setSelectedServiceCities] = useState<PakistanCity[]>([]);
   const [selectedLanguages, setSelectedLanguages] = useState<Language[]>([]);
   const [loading, setLoading] = useState(false);
@@ -106,6 +114,21 @@ export function CreateWorkerProfileScreen({ navigation }: Props) {
     if (!cnic.trim()) {
       return Alert.alert('Required', 'Please enter your CNIC number');
     }
+    if (!shopBuilding.trim() || !shopStreet.trim()) {
+      return Alert.alert(
+        'Shop address required',
+        'Enter both the building / shop and the street.',
+      );
+    }
+    if (shopLatitude == null || shopLongitude == null) {
+      return Alert.alert(
+        'Pin your shop on the map',
+        'Tap "Find on map" or drop a pin so customers can find you.',
+      );
+    }
+    if (!selectedCity) {
+      return Alert.alert('City required', 'Pick a city before continuing.');
+    }
 
     setLoading(true);
     try {
@@ -119,7 +142,11 @@ export function CreateWorkerProfileScreen({ navigation }: Props) {
         hourlyRate: hourlyRate ? parseInt(hourlyRate) : undefined,
         dailyRate: dailyRate ? parseInt(dailyRate) : undefined,
         city: selectedCity || undefined,
-        area: area.trim() || undefined,
+        // The shop address (building + street) goes into `area` since the
+        // worker DTO doesn't have a dedicated address field.
+        area: `${shopBuilding.trim()}, ${shopStreet.trim()}`,
+        shopLatitude,
+        shopLongitude,
         serviceCities: selectedServiceCities.length > 0 ? selectedServiceCities : undefined,
         languages: selectedLanguages.length > 0 ? selectedLanguages : undefined,
       });
@@ -344,18 +371,30 @@ export function CreateWorkerProfileScreen({ navigation }: Props) {
               </TouchableOpacity>
             ))}
           </View>
-          <View style={[styles.inputGroup, { marginTop: 12 }]}>
-            <Text style={styles.label}>Area</Text>
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. F-8, DHA Phase 5"
-                placeholderTextColor={colors.gray400}
-                value={area}
-                onChangeText={setArea}
-              />
-            </View>
+          <View style={{ marginTop: 16 }}>
+            <LocationPickerField
+              label="Shop / workplace location *"
+              building={shopBuilding}
+              onBuildingChange={setShopBuilding}
+              street={shopStreet}
+              onStreetChange={setShopStreet}
+              city={selectedCity}
+              latitude={shopLatitude}
+              longitude={shopLongitude}
+              onLocationPicked={(lat, lng) => {
+                setShopLatitude(lat);
+                setShopLongitude(lng);
+              }}
+              onLocationCleared={() => {
+                setShopLatitude(null);
+                setShopLongitude(null);
+              }}
+            />
+            <Text style={styles.helperText}>
+              Required — customers will use this pin to find your shop on a map.
+            </Text>
           </View>
+
           <Text style={[styles.label, { marginTop: 8 }]}>Service Cities</Text>
           <View style={styles.chipGrid}>
             {cities.map(city => (
@@ -397,9 +436,12 @@ export function CreateWorkerProfileScreen({ navigation }: Props) {
 
         {/* Submit */}
         <TouchableOpacity
-          style={[styles.submitButton, loading && { opacity: 0.7 }]}
+          style={[
+            styles.submitButton,
+            (loading || shopLatitude == null || shopLongitude == null) && { opacity: 0.7 },
+          ]}
           onPress={handleCreate}
-          disabled={loading}
+          disabled={loading || shopLatitude == null || shopLongitude == null}
           activeOpacity={0.8}
         >
           {loading ? (
@@ -461,6 +503,7 @@ const styles = StyleSheet.create({
   input: { flex: 1, fontSize: 15, color: colors.foreground },
   rateRow: { flexDirection: 'row', gap: 12 },
   chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  helperText: { fontSize: 11, color: colors.slate500, marginTop: 6, fontStyle: 'italic' },
   chip: {
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
     borderWidth: 1, borderColor: colors.slate200, backgroundColor: colors.slate50,

@@ -1,110 +1,253 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  Modal,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LeafletPickerMap } from './LeafletPickerMap';
+import MapView, { MapPressEvent, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { geocodeAddress, reverseGeocode } from '../api/geocoding';
 import { colors } from '../theme/colors';
+import { PakistanCity } from '../types';
+
+/**
+ * Mandatory location picker for worker / agency signup.
+ *
+ *   Building → Street → (City from parent's chip selector) → Find on map
+ *   ↓
+ *   Google Maps embedded below; pin is draggable to fine-tune.
+ *   ↓
+ *   Parent reads `latitude` / `longitude` for submit.
+ *
+ * The address is structured (not a single freeform field) so Google Geocoding
+ * resolves more reliably. The full address sent to the backend is composed by
+ * the parent screen (typically `${building}, ${street}`).
+ */
 
 interface Props {
-  /** Plain-text address (e.g. "Block A, Sector 5, near Main Market"). */
-  addressText: string;
-  onAddressTextChange: (v: string) => void;
-  /** Picked latitude/longitude. Null when the user hasn't picked a point yet. */
+  /** Building number / shop number / plot. */
+  building: string;
+  onBuildingChange: (v: string) => void;
+  /** Street name + area / sector / locality. */
+  street: string;
+  onStreetChange: (v: string) => void;
+  /** City already selected via the parent's chip selector — read-only here. */
+  city: PakistanCity | null;
+  /** Confirmed pin coordinates. Null when nothing has been picked yet. */
   latitude: number | null;
   longitude: number | null;
   onLocationPicked: (lat: number, lng: number) => void;
   onLocationCleared?: () => void;
   label?: string;
-  placeholder?: string;
-  /** Optional initial map center; falls back to Islamabad. */
-  initialLat?: number;
-  initialLng?: number;
 }
 
-/**
- * Combined address input + "Pick on map" picker. The map uses Leaflet via WebView with
- * OpenStreetMap tiles, so it needs no API key. The text address and the lat/lng are
- * stored independently — the parent decides what to do with each.
- */
+// City → reasonable initial map center. Used only until the user
+// geocodes / drops a pin.
+const CITY_CENTERS: Record<PakistanCity, { lat: number; lng: number }> = {
+  KARACHI:    { lat: 24.8607, lng: 67.0011 },
+  LAHORE:     { lat: 31.5497, lng: 74.3436 },
+  ISLAMABAD:  { lat: 33.6844, lng: 73.0479 },
+  RAWALPINDI: { lat: 33.5651, lng: 73.0169 },
+  FAISALABAD: { lat: 31.4504, lng: 73.1350 },
+  MULTAN:     { lat: 30.1575, lng: 71.5249 },
+  PESHAWAR:   { lat: 34.0151, lng: 71.5249 },
+  QUETTA:     { lat: 30.1798, lng: 66.9750 },
+  SIALKOT:    { lat: 32.4945, lng: 74.5229 },
+  GUJRANWALA: { lat: 32.1877, lng: 74.1945 },
+};
+
 export function LocationPickerField({
-  addressText,
-  onAddressTextChange,
+  building,
+  onBuildingChange,
+  street,
+  onStreetChange,
+  city,
   latitude,
   longitude,
   onLocationPicked,
   onLocationCleared,
-  label = 'Address',
-  placeholder = 'Street, area, landmark',
-  initialLat,
-  initialLng,
+  label = 'Office address *',
 }: Props) {
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [formattedAddress, setFormattedAddress] = useState<string | null>(null);
+
+  // Recenter the map whenever the city changes (until the user pins something).
+  const initialCenter = city
+    ? CITY_CENTERS[city]
+    : { lat: 30.3753, lng: 69.3451 }; // Pakistan centroid
+
+  const composedQuery = [building, street, city ? city.replace('_', ' ') : '', 'Pakistan']
+    .filter((p) => p && p.trim().length > 0)
+    .join(', ');
+
+  const handleFindOnMap = async () => {
+    if (!building.trim() && !street.trim()) {
+      Alert.alert(
+        'Type building & street first',
+        'Enter at least the building number and street name, then tap "Find on map".',
+      );
+      return;
+    }
+    if (!city) {
+      Alert.alert('Select a city', 'Pick the city above before searching the map.');
+      return;
+    }
+    setSearching(true);
+    try {
+      const result = await geocodeAddress(composedQuery);
+      if (!result) {
+        Alert.alert(
+          'Address not found',
+          'Google could not match that address. Try a more specific street name, or drag the pin on the map below to set it manually.',
+        );
+        return;
+      }
+      onLocationPicked(result.latitude, result.longitude);
+      setFormattedAddress(result.formattedAddress);
+    } catch (e: any) {
+      Alert.alert(
+        'Geocoding failed',
+        e?.message?.includes('REQUEST_DENIED')
+          ? 'Google rejected the API key. Make sure the Geocoding API is enabled in Google Cloud Console for the same key used by Maps.'
+          : `Could not search address: ${e?.message ?? 'unknown error'}`,
+      );
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleMapEvent = (lat: number, lng: number) => {
+    onLocationPicked(lat, lng);
+    // Fire-and-forget reverse geocode for user feedback.
+    reverseGeocode(lat, lng).then((addr) => {
+      if (addr) setFormattedAddress(addr);
+    });
+  };
+
+  // Clear the formatted address echo if the user clears the pin.
+  useEffect(() => {
+    if (latitude == null || longitude == null) setFormattedAddress(null);
+  }, [latitude, longitude]);
+
+  const hasPin = latitude != null && longitude != null;
 
   return (
     <View style={styles.wrap}>
-      {!!label && <Text style={styles.label}>{label}</Text>}
+      <Text style={styles.label}>{label}</Text>
 
-      <TextInput
-        style={styles.input}
-        value={addressText}
-        onChangeText={onAddressTextChange}
-        placeholder={placeholder}
-        placeholderTextColor={colors.gray400}
-      />
-
-      <View style={styles.row}>
-        <TouchableOpacity style={styles.pickBtn} onPress={() => setPickerOpen(true)}>
-          <Ionicons name="map-outline" size={16} color={colors.primary} />
-          <Text style={styles.pickBtnText}>
-            {latitude != null && longitude != null ? 'Change pin' : 'Pick on map'}
-          </Text>
-        </TouchableOpacity>
-
-        {latitude != null && longitude != null && (
-          <View style={styles.coordsChip}>
-            <Ionicons name="location" size={12} color={colors.green600} />
-            <Text style={styles.coordsText}>
-              {latitude.toFixed(4)}, {longitude.toFixed(4)}
-            </Text>
-            {onLocationCleared && (
-              <TouchableOpacity onPress={onLocationCleared} hitSlop={8}>
-                <Ionicons name="close-circle" size={14} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+      <View style={styles.fieldGroup}>
+        <Text style={styles.subLabel}>Building / shop / plot</Text>
+        <TextInput
+          style={styles.input}
+          value={building}
+          onChangeText={onBuildingChange}
+          placeholder="e.g. Shop 12, Plot 4-A"
+          placeholderTextColor={colors.gray400}
+          autoCapitalize="words"
+        />
       </View>
 
-      <Modal visible={pickerOpen} animationType="slide" onRequestClose={() => setPickerOpen(false)}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Tap the map to pick a location</Text>
-          <TouchableOpacity style={styles.doneBtn} onPress={() => setPickerOpen(false)}>
-            <Text style={styles.doneBtnText}>Done</Text>
-          </TouchableOpacity>
+      <View style={styles.fieldGroup}>
+        <Text style={styles.subLabel}>Street / area / sector</Text>
+        <TextInput
+          style={styles.input}
+          value={street}
+          onChangeText={onStreetChange}
+          placeholder="e.g. Liaqat Road, F-8 Markaz"
+          placeholderTextColor={colors.gray400}
+          autoCapitalize="words"
+        />
+      </View>
+
+      <View style={styles.cityRow}>
+        <Ionicons name="business" size={14} color={colors.mutedForeground} />
+        <Text style={styles.cityText}>
+          City: <Text style={styles.cityValue}>{city ? city.replace('_', ' ') : 'select a city above'}</Text>
+        </Text>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.findBtn, (searching || !city) && styles.findBtnBusy]}
+        onPress={handleFindOnMap}
+        disabled={searching || !city}>
+        {searching ? (
+          <ActivityIndicator size="small" color="white" />
+        ) : (
+          <Ionicons name="search" size={16} color="white" />
+        )}
+        <Text style={styles.findBtnText}>
+          {searching ? 'Searching…' : 'Find on map'}
+        </Text>
+      </TouchableOpacity>
+
+      <View style={styles.mapBox}>
+        <MapView
+          provider={PROVIDER_GOOGLE}
+          style={styles.map}
+          region={{
+            latitude: latitude ?? initialCenter.lat,
+            longitude: longitude ?? initialCenter.lng,
+            latitudeDelta: hasPin ? 0.01 : 0.08,
+            longitudeDelta: hasPin ? 0.01 : 0.08,
+          }}
+          onPress={(e: MapPressEvent) =>
+            handleMapEvent(e.nativeEvent.coordinate.latitude, e.nativeEvent.coordinate.longitude)
+          }>
+          {hasPin && (
+            <Marker
+              coordinate={{ latitude: latitude!, longitude: longitude! }}
+              pinColor={colors.primary}
+              draggable
+              onDragEnd={(e) =>
+                handleMapEvent(
+                  e.nativeEvent.coordinate.latitude,
+                  e.nativeEvent.coordinate.longitude,
+                )
+              }
+            />
+          )}
+        </MapView>
+      </View>
+
+      {hasPin ? (
+        <View style={styles.confirmBox}>
+          <Ionicons name="checkmark-circle" size={16} color={colors.green600} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.confirmText}>
+              Location pinned ({latitude!.toFixed(5)}, {longitude!.toFixed(5)})
+            </Text>
+            {formattedAddress && (
+              <Text style={styles.confirmAddress} numberOfLines={2}>
+                {formattedAddress}
+              </Text>
+            )}
+            <Text style={styles.dragHint}>Drag the pin or tap elsewhere on the map to fine-tune.</Text>
+          </View>
+          {onLocationCleared && (
+            <TouchableOpacity onPress={onLocationCleared} hitSlop={10}>
+              <Ionicons name="close-circle" size={18} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
         </View>
-        <View style={{ flex: 1 }}>
-          <LeafletPickerMap
-            initialLat={latitude ?? initialLat}
-            initialLng={longitude ?? initialLng}
-            markerLat={latitude}
-            markerLng={longitude}
-            onLocationPicked={onLocationPicked}
-          />
-        </View>
-      </Modal>
+      ) : (
+        <Text style={styles.hint}>
+          Type building + street, pick a city, then tap <Text style={styles.hintB}>Find on map</Text>{' '}
+          — or tap directly on the map to drop a pin.
+        </Text>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: '600', color: colors.mutedForeground, marginBottom: 6 },
+  label: { fontSize: 14, fontWeight: '700', color: colors.foreground, marginBottom: 8 },
+  fieldGroup: { marginBottom: 10 },
+  subLabel: { fontSize: 12, fontWeight: '600', color: colors.mutedForeground, marginBottom: 4 },
   input: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -113,27 +256,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: colors.foreground,
-    fontSize: 15,
+    fontSize: 14,
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
-  pickBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
-    borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.blue50,
+  cityRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  cityText: { fontSize: 12, color: colors.mutedForeground },
+  cityValue: { fontWeight: '600', color: colors.foreground },
+  findBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    marginBottom: 10,
   },
-  pickBtnText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
-  coordsChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-    backgroundColor: colors.slate100,
+  findBtnBusy: { opacity: 0.6 },
+  findBtnText: { color: 'white', fontWeight: '600', fontSize: 13 },
+  mapBox: {
+    height: 260,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
   },
-  coordsText: { fontSize: 12, color: colors.foreground, fontFamily: 'monospace' },
-  modalHeader: {
-    paddingTop: 50, paddingBottom: 12, paddingHorizontal: 16,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.card, borderBottomWidth: 1, borderColor: colors.border,
+  map: { flex: 1 },
+  confirmBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 10,
   },
-  modalTitle: { fontSize: 15, fontWeight: '600', color: colors.foreground },
-  doneBtn: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: 8 },
-  doneBtnText: { color: colors.white, fontWeight: '600' },
+  confirmText: { fontSize: 12, color: colors.foreground, fontWeight: '600' },
+  confirmAddress: { fontSize: 11, color: colors.mutedForeground, marginTop: 2 },
+  dragHint: { fontSize: 10, color: colors.mutedForeground, marginTop: 2, fontStyle: 'italic' },
+  hint: { fontSize: 11, color: colors.mutedForeground, marginTop: 8 },
+  hintB: { fontWeight: '700', color: colors.primary },
 });

@@ -6,18 +6,19 @@ import { logger } from '../utils/logger';
 
 const TAG = 'ApiClient';
 
-// GCP backend IP — set EXPO_PUBLIC_GCP_BACKEND_IP in .env after deploying to GCP
-const GCP_IP = process.env.EXPO_PUBLIC_GCP_BACKEND_IP;
+// Production backend URL — hardcoded literal, no env-var indirection.
+// Update this string and rebuild when the production IP/host changes.
+const PROD_BACKEND_URL = 'http://35.244.16.253:8080/ums';
 
 const getBaseUrl = () => {
-  // 1. GCP deployment — use static public IP (works with any APK, anywhere)
-  if (GCP_IP && GCP_IP.trim() !== '') {
-    const url = `http://${GCP_IP.trim()}:8080/ums`;
-    logger.info(TAG, `Base URL → GCP backend: ${url}`);
-    return url;
+  // Production builds always use the hardcoded URL — immune to any bundler /
+  // env-injection quirk. Anything below this branch is dev-only.
+  if (!__DEV__) {
+    logger.info(TAG, `Base URL → production: ${PROD_BACKEND_URL}`);
+    return PROD_BACKEND_URL;
   }
 
-  // 2. Local development via Expo dev server — dynamic IP resolution
+  // Dev: dynamic IP from the Expo dev server (Metro picks the host's LAN IP).
   const debuggerHost =
     Constants.expoConfig?.hostUri ??
     (Constants as any).expoGoConfig?.debuggerHost ??
@@ -38,7 +39,7 @@ const getBaseUrl = () => {
     }
   }
 
-  // 3. Android emulator fallback
+  // Dev fallback: Android emulator alias for the host's localhost.
   if (Platform.OS === 'android') {
     const url = 'http://10.0.2.2:8080/ums';
     logger.info(TAG, `Base URL → Android emulator fallback (${url})`);

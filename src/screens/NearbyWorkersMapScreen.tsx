@@ -37,7 +37,7 @@ export function NearbyWorkersMapScreen() {
 
   const [workers, setWorkers] = useState<NearbyWorkerListItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [radiusKm, setRadiusKm] = useState(5);
+  const [radiusKm, setRadiusKm] = useState(50);
   const [selectedType, setSelectedType] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -121,8 +121,8 @@ export function NearbyWorkersMapScreen() {
         <Slider
           style={styles.slider}
           minimumValue={1}
-          maximumValue={30}
-          step={1}
+          maximumValue={200}
+          step={5}
           value={radiusKm}
           onValueChange={setRadiusKm}
           minimumTrackTintColor={colors.primary}
@@ -152,11 +152,35 @@ export function NearbyWorkersMapScreen() {
                 coordinate={{ latitude: w.shopLatitude!, longitude: w.shopLongitude! }}
                 pinColor={colors.primary}
               >
-                <Callout onPress={() => navigation.navigate('WorkerDetail', { workerId: w.workerId })}>
+                <Callout
+                  tooltip={false}
+                  onPress={() => navigation.navigate('WorkerDetail', { workerId: w.workerId })}>
                   <View style={styles.callout}>
-                    <Text style={styles.calloutName}>{w.firstName} {w.lastName}</Text>
-                    <Text style={styles.calloutType}>{w.workerType?.toString()}</Text>
-                    <Text style={styles.calloutDist}>{w.distanceKm?.toFixed(1)} km away</Text>
+                    <Text style={styles.calloutName} numberOfLines={1}>
+                      {w.firstName} {w.lastName}
+                    </Text>
+                    <Text style={styles.calloutType}>
+                      {w.workerType?.toString().replace('_', ' ')}
+                    </Text>
+                    <View style={styles.calloutMetaRow}>
+                      <Ionicons name="star" size={12} color="#f59e0b" />
+                      <Text style={styles.calloutMeta}>
+                        {w.averageRating ? Number(w.averageRating).toFixed(1) : '—'}
+                      </Text>
+                      <Text style={styles.calloutMetaDot}>·</Text>
+                      <Text style={styles.calloutMeta}>
+                        {w.totalJobsCompleted ?? 0} jobs
+                      </Text>
+                    </View>
+                    {w.hourlyRate != null && (
+                      <Text style={styles.calloutPrice}>
+                        Rs. {w.hourlyRate}/hr
+                        {w.dailyRate != null ? `  ·  Rs. ${w.dailyRate}/day` : ''}
+                      </Text>
+                    )}
+                    <Text style={styles.calloutDist}>
+                      {w.distanceKm?.toFixed(1)} km away
+                    </Text>
                     <Text style={styles.calloutAction}>Tap to view profile →</Text>
                   </View>
                 </Callout>
@@ -200,10 +224,14 @@ const styles = StyleSheet.create({
   mapContainer: { flex: 1, position: 'relative' },
   map: { flex: 1 },
   loadingOverlay: { position: 'absolute', top: 12, right: 12, backgroundColor: colors.white, borderRadius: 20, padding: 8, elevation: 3 },
-  callout: { width: 200, padding: 8 },
-  calloutName: { fontSize: 14, fontWeight: '600', color: colors.slate900, marginBottom: 2 },
-  calloutType: { fontSize: 12, color: colors.slate500, marginBottom: 2 },
-  calloutDist: { fontSize: 12, color: colors.primary, fontWeight: '500', marginBottom: 4 },
+  callout: { width: 220, padding: 10 },
+  calloutName: { fontSize: 14, fontWeight: '700', color: colors.slate900, marginBottom: 2 },
+  calloutType: { fontSize: 12, color: colors.slate500, marginBottom: 4, textTransform: 'capitalize' },
+  calloutMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  calloutMeta: { fontSize: 12, color: colors.slate700, fontWeight: '500' },
+  calloutMetaDot: { fontSize: 12, color: colors.slate400, marginHorizontal: 2 },
+  calloutPrice: { fontSize: 11, color: colors.slate600, marginBottom: 4 },
+  calloutDist: { fontSize: 12, color: colors.primary, fontWeight: '600', marginBottom: 6 },
   calloutAction: { fontSize: 11, color: colors.slate400 },
   resultsBar: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.slate200 },
   resultsText: { fontSize: 13, color: colors.slate500, textAlign: 'center' },

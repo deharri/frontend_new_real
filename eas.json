@@ -1,16 +1,31 @@
 {
   "cli": {
-    "version": ">= 16.0.0"
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
-    "preview": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
       "android": {
         "buildType": "apk"
       }
     },
-    "development": {
-      "developmentClient": true,
+    "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_GCP_BACKEND_IP": "35.244.16.253"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "distribution": "internal",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_GCP_BACKEND_IP": "35.244.16.253"
+      },
       "android": {
         "buildType": "apk"
       }

@@ -77,7 +77,10 @@ export function CreateJobListingScreen({ navigation }: Props) {
   const [budgetMax, setBudgetMax] = useState('');
   const [selectedBudgetType, setSelectedBudgetType] = useState<BudgetType>('FIXED');
   const [selectedCity, setSelectedCity] = useState<PakistanCity | null>(null);
-  const [area, setArea] = useState('');
+  // Job-site address — building + street feed the geocoder; combined into `area` for backend.
+  const [building, setBuilding] = useState('');
+  const [street, setStreet] = useState('');
+  const area = `${building.trim()}, ${street.trim()}`.replace(/^,\s*|,\s*$/g, '');
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [selectedUrgency, setSelectedUrgency] = useState<UrgencyLevel>('NORMAL');
@@ -232,13 +235,15 @@ export function CreateJobListingScreen({ navigation }: Props) {
           </View>
         </View>
 
-        {/* Area + map picker */}
+        {/* Job-site address + map picker */}
         <View style={styles.field}>
           <LocationPickerField
-            label="Area / Address"
-            placeholder="e.g. DHA Phase 5, Block A"
-            addressText={area}
-            onAddressTextChange={setArea}
+            label="Job site address"
+            building={building}
+            onBuildingChange={setBuilding}
+            street={street}
+            onStreetChange={setStreet}
+            city={selectedCity}
             latitude={latitude}
             longitude={longitude}
             onLocationPicked={(lat, lng) => { setLatitude(lat); setLongitude(lng); }}

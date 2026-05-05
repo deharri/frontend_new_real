@@ -167,6 +167,11 @@ export interface CreateWorkerAccount {
   dailyRate?: number;
   city?: PakistanCity;
   area?: string;
+  // Shop coordinates — required by the signup screen, but kept optional in
+  // the API contract so other call sites (e.g. agency adding a worker on
+  // the worker's behalf) can still skip them.
+  shopLatitude?: number;
+  shopLongitude?: number;
   serviceCities?: PakistanCity[];
   languages?: Language[];
   agencyId?: string;
@@ -250,6 +255,9 @@ export interface CreateAgency {
   contactEmail?: string;
   city: PakistanCity;
   address: string;
+  // Required: office coordinates from LocationPickerField on signup.
+  latitude: number;
+  longitude: number;
   serviceCities?: PakistanCity[];
   licenseNumber?: string;
 }

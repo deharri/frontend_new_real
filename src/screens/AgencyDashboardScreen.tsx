@@ -10,6 +10,7 @@ import {
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAgency } from '../context/AgencyContext';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
@@ -19,6 +20,7 @@ import { colors } from '../theme/colors';
 
 export function AgencyDashboardScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   const { agencyProfile, daysUntilExpiry, isAgencyActive, refreshAgency, isLoadingAgency } =
     useAgency();
   const { user } = useAuth();
@@ -45,7 +47,7 @@ export function AgencyDashboardScreen() {
 
   if (isLoadingAgency && !agencyProfile) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
@@ -53,7 +55,7 @@ export function AgencyDashboardScreen() {
 
   if (!agencyProfile) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { paddingTop: insets.top }]}>
         <Text style={styles.empty}>No agency found.</Text>
         <TouchableOpacity
           style={styles.action}
@@ -88,7 +90,7 @@ export function AgencyDashboardScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 20 }]}>
       <View style={styles.header}>
         <Text style={styles.title}>{agencyProfile.agencyName}</Text>
         <Text style={styles.sub}>
